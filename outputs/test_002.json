@@ -1,0 +1,12 @@
+{
+  "video_id": "test_002",
+  "label": "unknown",
+  "actions": [],
+  "highlights": [
+    {
+      "start": 0.0,
+      "end": 30.0,
+      "importance": 0.5
+    }
+  ]
+}
