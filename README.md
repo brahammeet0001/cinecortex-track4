@@ -40,3 +40,13 @@ and a highlight selection of at most 15% of the original duration.
 ## Status
 Work in progress. main.py currently uses a placeholder highlight, to be
 replaced by the real pipeline.
+## Pipeline behaviour
+main.py tries, in order: perception.predict (Member B's model), then
+perception.baseline (motion baseline, no action labels), then a placeholder.
+Highlights are always trimmed to fit the 15% budget.
+
+## Evaluation
+See code/evaluation/ (evaluate.py, metrics.py) and tests/ (run: python3 -m pytest -q).
+
+## Highlight video (optional)
+    python3 code/submission/compile_highlights.py <video.mp4> <result.json> <out.mp4>
