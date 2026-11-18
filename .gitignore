@@ -6,3 +6,4 @@ __pycache__/
 weights/*.pt
 weights/*.pth
 logs/
+highlights/
