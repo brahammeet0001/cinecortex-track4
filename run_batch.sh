@@ -18,3 +18,10 @@ for f in "$VID_DIR"/*.mp4; do
   fi
 done
 echo "Done: $ok ok, $fail failed. Log: $LOG"
+# --- metadata footer ---
+{
+  echo "git_commit=$(git rev-parse --short HEAD 2>/dev/null || echo none)"
+  echo "python=$(python3 --version 2>&1)"
+  echo "ffmpeg=$(ffmpeg -version 2>/dev/null | head -1)"
+  echo "finished=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} | tee -a "$LOG"

@@ -50,3 +50,21 @@ See code/evaluation/ (evaluate.py, metrics.py) and tests/ (run: python3 -m pytes
 
 ## Highlight video (optional)
     python3 code/submission/compile_highlights.py <video.mp4> <result.json> <out.mp4>
+
+## Reproduce the submission
+
+    git clone https://github.com/brahammeet0001/cinecortex-track4.git
+    cd cinecortex-track4
+    python3 -m venv .venv && source .venv/bin/activate
+    pip install -r requirements.txt
+    ./check_all.sh <videos_dir> outputs
+
+Docker:
+
+    docker build -t cinecortex .
+    docker run --rm -v "$PWD/videos:/in" -v "$PWD/outputs:/out" cinecortex /in/<video>.mp4 /out/<video>.json
+
+## Known limitations
+- The fallback motion baseline does not detect actions (actions stay empty, label stays "unknown").
+- Highlights are always trimmed to fit the 15% budget, which can drop low-importance segments.
+- Variable-frame-rate videos use ffprobe durations; frame-exact cuts are not guaranteed.
