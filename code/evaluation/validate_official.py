@@ -2,6 +2,7 @@
 import argparse
 import csv
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -12,7 +13,7 @@ DUR_TOL = 0.5
 
 
 def is_num(x):
-    return isinstance(x, (int, float)) and not isinstance(x, bool)
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
 
 
 def check_seg(seg, dur, where, errs):
@@ -69,16 +70,20 @@ def validate(obj, stem, manifest, verbs, nouns, labels):
     if not isinstance(actions, list):
         errs.append("actions must be a list")
     else:
+        if len(actions) > 2000:
+            errs.append(f"actions has {len(actions)} items (max 2000)")
         for i, a in enumerate(actions):
             w = f"actions[{i}]"
             if not isinstance(a, dict):
                 errs.append(f"{w}: must be an object")
                 continue
             check_seg(a.get("segment"), dur, w, errs)
-            if a.get("verb") not in verbs:
-                errs.append(f"{w}: verb {a.get('verb')!r} not in supported verbs")
-            if a.get("noun") not in nouns:
-                errs.append(f"{w}: noun {a.get('noun')!r} not in supported nouns")
+            for k, vocab in (("verb", verbs), ("noun", nouns)):
+                v = a.get(k)
+                if not isinstance(v, str) or not v:
+                    errs.append(f"{w}: {k} must be a non-empty string")
+                elif v not in vocab:
+                    warns.append(f"{w}: {k} {v!r} is not in supported_classes (will not match ground truth)")
             sc = a.get("score")
             if not (is_num(sc) and 0 <= sc <= 1):
                 errs.append(f"{w}: score must be a number between 0 and 1")

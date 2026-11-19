@@ -50,9 +50,22 @@ def test_video_id_must_match_filename():
     assert run(good(), stem="other_name")[0]
 
 
-def test_bad_verb():
+def test_unknown_verb_is_only_a_warning():
     o = good()
     o["actions"][0]["verb"] = "teleport"
+    errs, warns = run(o)
+    assert errs == [] and warns
+
+
+def test_non_finite_score_is_an_error():
+    o = good()
+    o["actions"][0]["score"] = float("nan")
+    assert run(o)[0]
+
+
+def test_too_many_actions():
+    o = good()
+    o["actions"] = o["actions"] * 2001
     assert run(o)[0]
 
 
