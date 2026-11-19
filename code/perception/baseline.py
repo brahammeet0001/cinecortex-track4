@@ -1,12 +1,13 @@
-"""Fallback baseline: frame-difference 'motion' score per time bin.
-Not action detection. Gives valid highlights under the 15% budget."""
+"""Fallback baseline: frame-difference 'motion' score, selecting 4 s windows.
+Not action detection. Returns internal format (start/end/importance)."""
 import subprocess
 
 import numpy as np
 
-SAMPLE_FPS = 2     # time bins of 0.5 s
+SAMPLE_FPS = 2        # time bins of 0.5 s
+MIN_LEN = 4.0
 W, H = 64, 36
-BUDGET = 0.15
+BUDGET = 0.14         # below the hard 15% limit
 
 
 def motion_profile(video_path):
@@ -20,37 +21,36 @@ def motion_profile(video_path):
         return np.zeros(max(n, 1))
     frames = arr[: n * W * H].reshape(n, H, W).astype(np.float32)
     diffs = np.abs(np.diff(frames, axis=0)).mean(axis=(1, 2))
-    return np.concatenate([[0.0], diffs])  # bin i covers [i/fps, (i+1)/fps)
+    return np.concatenate([[0.0], diffs])
 
 
 def predict(video_path, meta):
     dur = meta["duration_s"]
     scores = motion_profile(video_path)
     n = len(scores)
-    smooth = np.convolve(scores, np.ones(3) / 3, mode="same")
-    k = int(BUDGET * dur * SAMPLE_FPS)          # floor, so we stay under 15%
-    k = max(1, min(k, n))
-    top = np.sort(np.argsort(smooth)[::-1][:k])
-    peak = float(smooth.max()) or 1.0
+    win = max(1, min(int(MIN_LEN * SAMPLE_FPS), n))
+    csum = np.concatenate([[0.0], np.cumsum(scores)])
+    wscore = (csum[win:] - csum[:-win]) / win
+    peak = float(wscore.max()) or 1.0
+    order = np.argsort(wscore)[::-1]
+    max_bins = int(BUDGET * dur * SAMPLE_FPS)
 
-    # merge adjacent bins into intervals
-    highlights, start, prev = [], None, None
-    for i in top:
-        if start is None:
-            start = prev = i
-        elif i == prev + 1:
-            prev = i
-        else:
-            highlights.append((start, prev))
-            start = prev = i
-    if start is not None:
-        highlights.append((start, prev))
+    taken = np.zeros(n, dtype=bool)
+    chosen, used = [], 0
+    for i in order:
+        if used + win > max_bins:
+            break
+        if taken[i:i + win].any():
+            continue
+        taken[i:i + win] = True
+        chosen.append(int(i))
+        used += win
+    if not chosen:
+        chosen = [int(order[0])]
 
-    out = []
-    for a, b in highlights:
-        s = a / SAMPLE_FPS
-        e = min((b + 1) / SAMPLE_FPS, dur)
-        if e > s:
-            imp = float(smooth[a:b + 1].mean() / peak)
-            out.append({"start": round(s, 3), "end": round(e, 3), "importance": round(imp, 3)})
-    return {"label": "unknown", "actions": [], "highlights": out}
+    highlights = []
+    for i in sorted(chosen):
+        s, e = i / SAMPLE_FPS, min((i + win) / SAMPLE_FPS, dur)
+        highlights.append({"start": round(s, 3), "end": round(e, 3),
+                           "importance": round(float(wscore[i]) / peak, 3)})
+    return {"label": "unknown", "actions": [], "highlights": highlights}

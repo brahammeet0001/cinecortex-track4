@@ -24,6 +24,7 @@ and a highlight selection of at most 15% of the original duration.
 ## Check outputs (local sanity check)
 
     python3 code/submission/check_output.py outputs data/videos
+    python3 code/evaluation/validate_official.py --dir outputs --manifest data_manifest/manifest.csv --classes data_manifest/supported_classes.json
 
 ## Layout
 - code/ingest/: probing and decoding (duration, fps, size)
