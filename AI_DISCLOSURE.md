@@ -5,12 +5,12 @@
   debugging shell scripts (batch runner, check_all.sh, packaging), drafting the output-schema
   converter, the local output checker, unit tests and README sections, and step-by-step
   troubleshooting of git, Docker and command-line errors. Member A ran and tested this code.
-- MEMBER_B_LINE
-- MEMBER_C_LINE
+- Member B used AI tools to help implement the action cleanup, highlight selection, official-schema integration, tests and documentation. Member B ran and tested this code.
+- Claude (Anthropic) was used by Member C for evaluation code, the package checker, tests, the presentation and demo-script drafts. Member C ran and tested this code.
 
 ## Models used by the pipeline
-- MODEL_LINE
-- DATASET_LINE
+- No pretrained or external model is used. Perception is a frame-difference motion heuristic built with FFmpeg and NumPy.
+- No training data was used. EPIC-KITCHENS-100 videos were only used to test the pipeline locally. No ground truth is copied or hardcoded.
 
 ## What humans did
 - Reviewed and ran all AI-assisted code, wrote and ran tests, and validated outputs with
