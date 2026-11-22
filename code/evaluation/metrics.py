@@ -1,27 +1,39 @@
-"""Metrics following the Track 04 slides.
+"""Metrics for the OFFICIAL Track 04 schema (see TEAM_README.md in the student package).
 
-ASSUMPTIONS (confirm with organisers, change here if their definition differs):
-  - Action mAP: per verb-noun class AP, averaged over classes, then over tIoU 0.1..0.5.
-    Predictions without a 'score' keep file order (score = 1.0 for all).
-  - Action coverage: a GT (verb, noun) pair counts as captured if at least `min_overlap`
-    of one of its instances lies inside the highlights. Soft penalty if budget exceeded.
-  - Highlight F1: frame-level F1 computed exactly on intervals (same as frame-level
-    in the limit of fine sampling).
+Official scoring (from TEAM_README):
+  Action mAP 25%      EPIC videos, `actions`, verb-noun overlap at tIoU 0.1..0.5
+  Action coverage 40% EPIC videos, `highlights`, share of distinct GT action pairs captured,
+                      soft length penalty above the 15% budget
+  Highlight F1 25%    FPVSum videos, frame-level F1 vs top-15% consensus importance frames
+  Label accuracy 10%  FPVSum videos, label.name
+Highlight segments shorter than 4.0 s are ignored during scoring (per README).
+
+ASSUMPTIONS (organisers did not publish exact formulas; change here if they do):
+  - mAP: per verb-noun class AP (all-point interpolation), mean over classes, then over thresholds;
+    predictions ranked by `score`.
+  - coverage: a GT (verb, noun) pair is captured if >= `min_overlap` of one of its instances lies
+    inside the scored highlights. Penalty factor = max(0, 1 - over / budget), linear.
+  - F1: computed exactly on intervals (equals frame-level F1 in the limit of fine sampling).
 """
-from .intervals import intersect_duration, merge_intervals, tiou, union_duration
+from .intervals import intersect_duration, merge_intervals, seg, tiou, union_duration
 
 TIOU_THRESHOLDS = (0.1, 0.2, 0.3, 0.4, 0.5)
+MIN_HIGHLIGHT_S = 4.0
 
 
 def _pair(a):
     return (a["verb"], a["noun"])
 
 
+def scored_highlights(highlights, min_len=MIN_HIGHLIGHT_S):
+    """Segments that count for scoring (>= 4.0 s)."""
+    return [seg(h) for h in highlights if seg(h)[1] - seg(h)[0] >= min_len - 1e-9]
+
+
 def _average_precision(dets, n_gt, gt_by_vid, thr):
-    """dets: list of (score, vid, start, end) for ONE class."""
     if n_gt == 0:
         return None
-    dets = sorted(dets, key=lambda d: -d[0])  # stable: ties keep input order
+    dets = sorted(dets, key=lambda d: -d[0])
     used = {vid: [False] * len(g) for vid, g in gt_by_vid.items()}
     tp = []
     for score, vid, s, e in dets:
@@ -52,23 +64,15 @@ def _average_precision(dets, n_gt, gt_by_vid, thr):
 
 
 def action_map(preds, gts, thresholds=TIOU_THRESHOLDS):
-    """preds/gts: {video_id: [ {verb,noun,start,end,(score)} ]}.
-    Returns (mAP, {class: AP averaged over thresholds})."""
+    """preds/gts: {video_id: [{'segment':[s,e], 'verb','noun', ('score')}]} (EPIC videos)."""
     classes = {_pair(a) for acts in gts.values() for a in acts}
     per_class_all = {c: [] for c in classes}
     for thr in thresholds:
         for c in classes:
-            gt_by_vid = {
-                vid: [(a["start"], a["end"]) for a in acts if _pair(a) == c]
-                for vid, acts in gts.items()
-            }
+            gt_by_vid = {vid: [seg(a) for a in acts if _pair(a) == c] for vid, acts in gts.items()}
             n_gt = sum(len(v) for v in gt_by_vid.values())
-            dets = [
-                (a.get("score", 1.0), vid, a["start"], a["end"])
-                for vid, acts in preds.items()
-                for a in acts
-                if _pair(a) == c
-            ]
+            dets = [(a.get("score", 1.0), vid, *seg(a))
+                    for vid, acts in preds.items() for a in acts if _pair(a) == c]
             ap = _average_precision(dets, n_gt, gt_by_vid, thr)
             if ap is not None:
                 per_class_all[c].append(ap)
@@ -78,34 +82,32 @@ def action_map(preds, gts, thresholds=TIOU_THRESHOLDS):
 
 
 def action_coverage(highlights, gt_actions, duration, budget=0.15, min_overlap=0.5):
-    """Returns (raw_coverage, penalised_coverage, missed_pairs) for ONE video."""
-    hl = [(h["start"], h["end"]) for h in highlights]
+    """(raw, penalised, missed_pairs) for ONE EPIC video."""
+    hl = scored_highlights(highlights)
     by_pair = {}
     for a in gt_actions:
-        by_pair.setdefault(_pair(a), []).append((a["start"], a["end"]))
+        by_pair.setdefault(_pair(a), []).append(seg(a))
     if not by_pair:
         return 0.0, 0.0, []
     captured, missed = 0, []
     for pair, insts in by_pair.items():
-        ok = any(
-            (e - s) > 0 and intersect_duration(hl, [(s, e)]) / (e - s) >= min_overlap
-            for s, e in insts
-        )
+        ok = any((e - s) > 0 and intersect_duration(hl, [(s, e)]) / (e - s) >= min_overlap
+                 for s, e in insts)
         if ok:
             captured += 1
         else:
             missed.append(pair)
     raw = captured / len(by_pair)
-    ratio = union_duration(hl) / duration if duration > 0 else 0.0
+    ratio = union_duration([seg(h) for h in highlights]) / duration if duration > 0 else 0.0
     over = max(0.0, ratio - budget)
-    factor = max(0.0, 1.0 - over / budget)  # linear soft penalty (assumption)
+    factor = max(0.0, 1.0 - over / budget)
     return raw, raw * factor, missed
 
 
 def highlight_f1(highlights, important_segments):
-    """Frame-level F1 vs consensus important segments (lists of {'start','end'})."""
-    p = merge_intervals([(h["start"], h["end"]) for h in highlights])
-    g = merge_intervals([(h["start"], h["end"]) for h in important_segments])
+    """Frame-level F1 for ONE FPVSum video. important_segments = [[s, e], ...]."""
+    p = merge_intervals(scored_highlights(highlights))
+    g = merge_intervals([(float(s), float(e)) for s, e in important_segments])
     lp, lg = union_duration(p), union_duration(g)
     if lp == 0 or lg == 0:
         return 0.0
@@ -115,5 +117,5 @@ def highlight_f1(highlights, important_segments):
 
 
 def label_accuracy(pairs):
-    """pairs: list of (predicted_label, gt_label)."""
+    """pairs = [(predicted label.name, gt label)]."""
     return sum(p == g for p, g in pairs) / len(pairs) if pairs else 0.0
