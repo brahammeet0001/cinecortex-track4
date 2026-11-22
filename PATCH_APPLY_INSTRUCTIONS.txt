@@ -1,0 +1,6 @@
+CineCorteX Member B — changed/new files only
+
+Extract this archive at the root of your existing cinecortex-track4 repository.
+For a complete application of additions, modifications, AND deletions, use
+CineCorteX_MemberB.patch with `git apply` instead. The patch is based on the
+uploaded cinecortex-track4-main.zip contents.
