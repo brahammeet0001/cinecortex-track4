@@ -50,11 +50,11 @@ def test_video_id_must_match_filename():
     assert run(good(), stem="other_name")[0]
 
 
-def test_unknown_verb_is_only_a_warning():
+def test_unknown_verb_is_an_error():
     o = good()
     o["actions"][0]["verb"] = "teleport"
     errs, warns = run(o)
-    assert errs == [] and warns
+    assert errs and any("supported_classes" in e for e in errs)
 
 
 def test_non_finite_score_is_an_error():

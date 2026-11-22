@@ -1,79 +1,169 @@
-import json
-import sys
-import traceback
-from pathlib import Path
+"""Single-video CineCorteX inference entry point (official Track 04 schema)."""
+from __future__ import annotations
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+import csv
+import json
+import math
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+CODE_DIR = Path(__file__).resolve().parent
+ROOT = CODE_DIR.parent
+if str(CODE_DIR) not in sys.path:
+    sys.path.insert(0, str(CODE_DIR))
+
+from evaluation.validate_official import validate
 from ingest.probe import probe
-from selection.budget import within_budget, union_duration
+from perception.predict import predict
+from selection.budget import select_highlights, union_duration
+from temporal import normalize_actions
 
 LIMIT = 0.15
+TEAM_ID = os.environ.get("CINECORTEX_TEAM_ID", "T07").strip() or "T07"
+MANIFEST_PATH = ROOT / "data_manifest" / "manifest.csv"
+CLASSES_PATH = ROOT / "data_manifest" / "supported_classes.json"
 
 
-def placeholder(meta):
-    dur = meta["duration_s"]
-    return {
-        "label": "unknown",
-        "actions": [],
-        "highlights": [{"start": 0.0, "end": round(0.10 * dur, 2), "importance": 0.5}],
+def load_resources() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
+    manifest: dict[str, dict[str, Any]] = {}
+    if MANIFEST_PATH.exists():
+        with MANIFEST_PATH.open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                manifest[row["video_id"]] = {
+                    "duration_sec": float(row["duration_sec"]),
+                    "dataset": row["dataset"],
+                }
+    if CLASSES_PATH.exists():
+        classes = json.loads(CLASSES_PATH.read_text(encoding="utf-8"))
+    else:
+        classes = {"labels": ["other"], "verbs": ["other"], "nouns": ["other"]}
+    return manifest, {
+        "labels": set(classes.get("labels", [])),
+        "verbs": set(classes.get("verbs", [])),
+        "nouns": set(classes.get("nouns", [])),
     }
 
 
-def get_prediction(video_path, meta):
-    # 1) Member B's model
-    try:
-        from perception.predict import predict
-        try:
-            return predict(video_path, meta)
-        except Exception:
-            print("WARNING: perception.predict failed:", file=sys.stderr)
-            traceback.print_exc()
-    except ImportError:
-        print("NOTE: perception.predict not found", file=sys.stderr)
-    # 2) motion baseline
-    try:
-        from perception.baseline import predict as baseline_predict
-        print("NOTE: using motion baseline", file=sys.stderr)
-        return baseline_predict(video_path, meta)
-    except Exception:
-        print("WARNING: baseline failed:", file=sys.stderr)
-        traceback.print_exc()
-    # 3) placeholder
-    print("NOTE: using placeholder", file=sys.stderr)
-    return placeholder(meta)
+def _parse_label(prediction: dict[str, Any], dataset: str | None, valid_labels: set[str]) -> dict[str, Any]:
+    raw = prediction.get("label", "other")
+    score = prediction.get("label_score", 0.0)
+    if isinstance(raw, dict):
+        score = raw.get("score", score)
+        raw = raw.get("name", "other")
+    if dataset == "epic_kitchens_100":
+        # EPIC-KITCHENS-100 in this challenge is a cooking-only evaluation set;
+        # this is dataset metadata, not a visual action prediction.
+        name, score = "cooking", 1.0
+    else:
+        name = raw if isinstance(raw, str) and raw in valid_labels else "other"
+        if name == "cooking" and dataset == "fpvsum":
+            name = "other"
+        if not (isinstance(score, (int, float)) and not isinstance(score, bool) and math.isfinite(float(score))):
+            score = 0.0
+        score = max(0.0, min(1.0, float(score)))
+    if name not in valid_labels:
+        name, score = "other", 0.0
+    return {"name": name, "score": round(float(score), 4)}
 
 
-def enforce_budget(highlights, dur):
-    """Keep highest-importance intervals first until the 15% budget is full."""
-    kept = []
-    for h in sorted(highlights, key=lambda x: x.get("importance", 0), reverse=True):
-        trial = kept + [h]
-        if within_budget([(x["start"], x["end"]) for x in trial], dur, LIMIT):
-            kept.append(h)
-    return sorted(kept, key=lambda x: x["start"])
-
-
-def main(video_path, out_path):
+def build_submission(video_path: str, team_id: str | None = None) -> dict[str, Any]:
     meta = probe(video_path)
-    dur = meta["duration_s"]
-    pred = get_prediction(video_path, meta)
+    manifest, vocab = load_resources()
+    entry = manifest.get(meta["video_id"], {})
+    dataset = entry.get("dataset")
+    manifest_duration = entry.get("duration_sec")
+    probed_duration = float(meta["duration_s"])
 
-    highlights = [h for h in pred.get("highlights", [])
-                  if 0 <= h["start"] < h["end"] <= dur + 1e-6]
-    if not within_budget([(h["start"], h["end"]) for h in highlights], dur, LIMIT):
-        print("WARNING: highlights exceed 15%, trimming", file=sys.stderr)
-        highlights = enforce_budget(highlights, dur)
+    if manifest_duration is not None:
+        delta = abs(probed_duration - manifest_duration)
+        if delta > 0.5:
+            print(
+                f"WARNING: ffprobe duration {probed_duration:.3f}s differs from manifest "
+                f"{manifest_duration:.3f}s by {delta:.3f}s",
+                file=sys.stderr,
+            )
+            official_duration = probed_duration
+        else:
+            official_duration = float(manifest_duration)
+    else:
+        official_duration = probed_duration
 
-    result = {
+    # Keep all timestamps inside both the decoded media and official duration.
+    processing_duration = min(probed_duration, official_duration)
+    meta.update({
+        "duration_s": processing_duration,
+        "probed_duration_s": probed_duration,
+        "dataset": dataset,
+        "manifest_duration_sec": manifest_duration,
+    })
+    prediction = predict(video_path, meta)
+    if not isinstance(prediction, dict):
+        raise TypeError("perception.predict must return a dictionary")
+    print(f"INFO: selected perception path={prediction.get('perception_source', 'unspecified')}", file=sys.stderr)
+
+    actions = normalize_actions(
+        prediction.get("actions", []),
+        processing_duration,
+        verbs=vocab["verbs"],
+        nouns=vocab["nouns"],
+    )
+    candidate_highlights = prediction.get("highlights", [])
+    if not isinstance(candidate_highlights, list):
+        candidate_highlights = []
+    highlights_internal = select_highlights(
+        candidate_highlights,
+        processing_duration,
+        actions=actions,
+        limit=LIMIT,
+        min_segment=4.0,
+    )
+
+    label = _parse_label(prediction, dataset, vocab["labels"])
+    payload = {
+        "team_id": (team_id or TEAM_ID),
         "video_id": meta["video_id"],
-        "label": pred.get("label", "unknown"),
-        "actions": pred.get("actions", []),
-        "highlights": highlights,
+        "duration_sec": round(official_duration, 3),
+        "label": label,
+        "actions": [
+            {
+                "segment": [round(a["start"], 2), round(a["end"], 2)],
+                "verb": a["verb"],
+                "noun": a["noun"],
+                "score": round(a["score"], 4),
+            }
+            for a in actions
+        ],
+        "highlights": [
+            {"segment": [round(h["start"], 2), round(h["end"], 2)]}
+            for h in highlights_internal
+        ],
     }
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(out_path).write_text(json.dumps(result, indent=2))
-    used = union_duration([(h["start"], h["end"]) for h in highlights])
-    print(f"Wrote {out_path} ({dur:.1f}s, {meta['fps']:.2f} fps, highlight {used / dur:.1%})")
+
+    errs, warns = validate(payload, meta["video_id"],
+                           {meta["video_id"]: official_duration},
+                           vocab["verbs"], vocab["nouns"], vocab["labels"])
+    if errs:
+        raise ValueError("generated submission failed local schema checks: " + "; ".join(errs))
+    for warning in warns:
+        print(f"WARNING: local validator: {warning}", file=sys.stderr)
+    return payload
+
+
+def main(video_path: str, out_path: str) -> None:
+    payload = build_submission(video_path)
+    destination = Path(out_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    serialized = json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    destination.write_text(serialized, encoding="utf-8")
+    selected = [tuple(h["segment"]) for h in payload["highlights"]]
+    used = union_duration(selected)
+    ratio = used / float(payload["duration_sec"])
+    print(
+        f"Wrote {destination} ({payload['video_id']}, {payload['duration_sec']:.2f}s, "
+        f"{len(payload['actions'])} actions, highlight {used:.2f}s / {ratio:.1%})"
+    )
 
 
 if __name__ == "__main__":
@@ -82,6 +172,6 @@ if __name__ == "__main__":
         sys.exit(2)
     try:
         main(sys.argv[1], sys.argv[2])
-    except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

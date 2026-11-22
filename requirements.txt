@@ -1,3 +1,2 @@
-# Pin versions here as model dependencies are added.
-# Core pipeline currently uses only the Python standard library + ffmpeg/ffprobe (system install).
-numpy==2.5.5
+# Inference requires only the Python standard library, FFmpeg, and NumPy.
+numpy>=1.24,<3

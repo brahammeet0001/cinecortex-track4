@@ -1,20 +1,30 @@
-# Output contract (v0.1, provisional until the official validate.py is checked)
+# Track 04 submission output contract (organiser guide takes priority)
 
-One JSON per video, named `<video_id>.json`.
+The provisional v0.1 format was superseded after inspecting
+`data_manifest/TEAM_README.md` and the supplied examples. The inference
+boundary now emits exactly this structure:
 
-    {
-      "video_id": "string, same as filename without .json",
-      "label": "string, video-level category (check supported_classes.json)",
-      "actions": [
-        {"verb": "cut", "noun": "onion", "start": 12.4, "end": 15.85, "score": 0.82}
-      ],
-      "highlights": [
-        {"start": 12.4, "end": 15.85, "importance": 0.91}
-      ]
-    }
+```json
+{
+  "team_id": "T07",
+  "video_id": "P02_109",
+  "duration_sec": 512.3,
+  "label": {"name": "cooking", "score": 0.96},
+  "actions": [
+    {"segment": [12.4, 18.2], "verb": "open", "noun": "fridge", "score": 0.88}
+  ],
+  "highlights": [
+    {"segment": [11.0, 19.5]}
+  ]
+}
+```
 
-Rules:
-- All times are seconds (float), 0 <= start < end <= video duration.
-- Union of highlight intervals must be <= 15% of the video duration.
-- Overlaps count once.
-- Changes to this file need agreement from all three members and a version bump.
+Rules are defined by the supplied `data_manifest/TEAM_README.md`: supported
+vocabulary, timestamps in seconds, action and label confidence in `[0, 1]`,
+chronological non-overlapping highlights, a 4-second minimum highlight, and a
+15% total highlight-duration target. Manifest duration is used in the output
+when the probed media duration is within the stated ±0.5-second tolerance.
+
+The original organiser `validate.py` is not present in the uploaded repository.
+`code/evaluation/validate_official.py` is a locally implemented approximation,
+not an official validator.

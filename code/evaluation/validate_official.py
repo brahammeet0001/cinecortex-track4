@@ -61,8 +61,8 @@ def validate(obj, stem, manifest, verbs, nouns, labels):
     if not isinstance(label, dict) or "name" not in label or "score" not in label:
         errs.append("label must be an object with name and score")
     else:
-        if label["name"] not in labels:
-            warns.append(f"label name {label['name']!r} is not in supported_classes labels")
+        if not isinstance(label["name"], str) or label["name"] not in labels:
+            errs.append(f"label name {label['name']!r} is not in supported_classes labels")
         if not (is_num(label["score"]) and 0 <= label["score"] <= 1):
             errs.append("label score must be a number between 0 and 1")
 
@@ -83,7 +83,7 @@ def validate(obj, stem, manifest, verbs, nouns, labels):
                 if not isinstance(v, str) or not v:
                     errs.append(f"{w}: {k} must be a non-empty string")
                 elif v not in vocab:
-                    warns.append(f"{w}: {k} {v!r} is not in supported_classes (will not match ground truth)")
+                    errs.append(f"{w}: {k} {v!r} is not in supported_classes")
             sc = a.get("score")
             if not (is_num(sc) and 0 <= sc <= 1):
                 errs.append(f"{w}: score must be a number between 0 and 1")
@@ -123,6 +123,10 @@ def main():
     ap.add_argument("--dir", required=True)
     ap.add_argument("--manifest", required=True)
     ap.add_argument("--classes", required=True)
+    ap.add_argument("--require-complete", action="store_true",
+                    help="fail unless every manifest video has exactly one output JSON")
+    ap.add_argument("--team-id", default=None,
+                    help="require every output to use this team_id")
     a = ap.parse_args()
 
     manifest = {}
@@ -150,8 +154,22 @@ def main():
             print("   warn: ", w)
         ok += not errs
     if len(teams) > 1:
-        print(f"WARNING: more than one team_id across files: {sorted(teams)}")
-    print(f"{ok}/{len(files)} files OK (manifest lists {len(manifest)} videos)")
+        print(f"ERROR: more than one team_id across files: {sorted(teams)}")
+        ok = -1
+    if a.team_id and teams != {a.team_id}:
+        print(f"ERROR: expected all outputs to use team_id={a.team_id!r}; found {sorted(teams)}")
+        ok = -1
+    if a.require_complete:
+        actual_ids = {f.stem for f in files}
+        missing = sorted(set(manifest) - actual_ids)
+        extra = sorted(actual_ids - set(manifest))
+        if missing:
+            print(f"ERROR: {len(missing)} manifest videos have no output (first 20: {missing[:20]})")
+        if extra:
+            print(f"ERROR: {len(extra)} output files are not in the manifest (first 20: {extra[:20]})")
+        if missing or extra:
+            ok = -1
+    print(f"{max(ok, 0)}/{len(files)} files OK (manifest lists {len(manifest)} videos)")
     sys.exit(0 if ok == len(files) else 1)
 
 
