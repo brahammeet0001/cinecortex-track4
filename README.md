@@ -26,11 +26,11 @@ python3 -m pytest -q
 ./check_all.sh [videos_dir] [outputs_dir]
 ```
 
-Set the assigned team ID before inference. The repository examples use `T07`,
+Set the assigned team ID before inference. The repository examples use `Hacksmiths`,
 which is the default only to keep the starter command executable:
 
 ```bash
-CINECORTEX_TEAM_ID=T07 ./run.sh video.mp4 outputs/video.json
+CINECORTEX_TEAM_ID=Hacksmiths ./run.sh video.mp4 outputs/video.json
 ```
 
 The generated JSON uses exactly the organiser guide's six top-level fields:
@@ -133,7 +133,7 @@ outputs and prepare the organiser-style archive:
 
 ```bash
 ./run_batch.sh /path/to/videos outputs
-./make_package.sh T07
+./make_package.sh Hacksmiths
 ```
 
 `make_package.sh` refuses to package an incomplete output directory, output
