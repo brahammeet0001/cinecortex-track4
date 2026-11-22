@@ -151,3 +151,6 @@ cannot produce the required 187 evaluated outputs.
 - `data_manifest/`: supplied class vocabulary and 187-video manifest
 - `tests/`: unit and synthetic-video end-to-end tests
 - `weights/`: intentionally empty unless the team adds approved checkpoints
+
+## Demo video
+https://drive.google.com/file/d/10qq56VdoEu7xvKysbk8LgnUhgBBoyqLw/view?usp=drive_link
