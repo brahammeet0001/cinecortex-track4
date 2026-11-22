@@ -1,2 +1,2 @@
 # Inference requires only the Python standard library, FFmpeg, and NumPy.
-numpy>=1.24,<3
+numpy==2.5.5
