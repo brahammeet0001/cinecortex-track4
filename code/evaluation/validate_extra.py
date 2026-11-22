@@ -2,7 +2,7 @@
 
 Usage:
   PYTHONPATH=code python -m evaluation.validate_extra --dir outputs/ [--durations durations.json]
-durations.json = {"P01_01": 312.4, ...}  (seconds). Without it, duration/budget checks are skipped.
+durations.json = {"VIDEO_ID_1": 312.4, ...}  (seconds). Without it, duration/budget checks are skipped.
 """
 import argparse
 import json

@@ -21,7 +21,7 @@ from selection.budget import select_highlights, union_duration
 from temporal import normalize_actions
 
 LIMIT = 0.15
-TEAM_ID = os.environ.get("CINECORTEX_TEAM_ID", "T07").strip() or "T07"
+TEAM_ID = "Hacksmiths"
 MANIFEST_PATH = ROOT / "data_manifest" / "manifest.csv"
 CLASSES_PATH = ROOT / "data_manifest" / "supported_classes.json"
 

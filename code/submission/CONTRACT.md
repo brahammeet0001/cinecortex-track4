@@ -7,7 +7,7 @@ boundary now emits exactly this structure:
 ```json
 {
   "team_id": "T07",
-  "video_id": "P02_109",
+  "video_id": "VIDEO_ID_2",
   "duration_sec": 512.3,
   "label": {"name": "cooking", "score": 0.96},
   "actions": [

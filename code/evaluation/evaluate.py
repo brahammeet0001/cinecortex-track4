@@ -7,7 +7,7 @@ Usage (from repo root):
 --pred: folder of <video_id>.json in the OFFICIAL output schema
         (segment: [start, end], label: {"name", "score"}).
 --gt:   folder of <video_id>.json in our internal GT format, one per video:
-  {"video_id": "P01_01", "duration": 312.4, "label": "cooking",
+  {"video_id": "VIDEO_ID_1", "duration": 312.4, "label": "cooking",
    "actions": [{"verb": "cut", "noun": "onion", "start": 1.0, "end": 3.0}],
    "important_segments": [{"start": 10, "end": 20}]}      (FPVSum only)
 
